@@ -10,15 +10,160 @@
 #include "sr_router.h"
 #include "sr_if.h"
 #include "sr_protocol.h"
+#include "sr_rt.h"
 
-/* 
-  This function gets called every second. For each request sent out, we keep
-  checking whether we should resend an request or destroy the arp request.
-  See the comments in the header file for an idea of what it should look like.
-*/
-void sr_arpcache_sweepreqs(struct sr_instance *sr) { 
-    /* Fill this in */
+void table_lookup(struct sr_instance* sr, uint32_t ip, uint32_t* next_hop_ip, char** out_iface){
+  
+  struct sr_rt* entry = sr->routing_table;
+
+  while(entry!=NULL){
+
+    if(entry->dest.s_addr == ip){
+
+      if(next_hop_ip)*next_hop_ip = entry->gw.s_addr;
+
+      if(out_iface)*out_iface = entry->interface;
+
+      return;
+    }
+    entry=entry->next;
+  }
+
+  *next_hop_ip = 0;
+  *out_iface = NULL;
 }
+
+void icmp_hostUnreachable(struct sr_instance *sr, struct sr_packet* packet) {
+
+    unsigned int len = sizeof(struct sr_ethernet_hdr) + sizeof(struct sr_ip_hdr) + sizeof(struct sr_icmp_t11_hdr);
+    uint8_t* buf = malloc(len);
+
+    struct sr_ethernet_hdr* packet_eth_head = (struct sr_ethernet_hdr *) packet->buf;
+    struct sr_ip_hdr* packet_ip_head = (struct sr_ip_hdr *) (packet->buf + sizeof(struct sr_ethernet_hdr));
+
+    struct sr_ethernet_hdr* eth_hdr = (struct sr_ethernet_hdr *) buf;
+    memcpy(eth_hdr->ether_dhost, packet_eth_head->ether_shost, ETHER_ADDR_LEN);
+    memcpy(eth_hdr->ether_shost, packet_eth_head->ether_dhost, ETHER_ADDR_LEN);
+    eth_hdr->ether_type = htons(ethertype_ip);
+
+    struct sr_ip_hdr* ip_hdr = (struct sr_ip_hdr *) (buf + sizeof(struct sr_ethernet_hdr));
+    memcpy(ip_hdr, packet_ip_head, sizeof(sr_ip_hdr_t));
+    ip_hdr->ip_len = htons(sizeof(sr_ip_hdr_t) + sizeof(struct sr_icmp_t11_hdr));
+    ip_hdr->ip_ttl = INIT_TTL;
+    ip_hdr->ip_p = ip_protocol_icmp;
+    ip_hdr->ip_dst = packet_ip_head->ip_src;
+
+    uint32_t next_hop_ip;
+    char* entry;
+    table_lookup(sr, ip_hdr->ip_src, &next_hop_ip, &entry);
+
+    if (entry == NULL) {
+        return;
+    }
+
+    ip_hdr->ip_src = sr_get_interface(sr, entry)->ip;
+
+    ip_hdr->ip_sum = 0;
+    ip_hdr->ip_sum = cksum(ip_hdr, sizeof(struct sr_ip_hdr));
+
+    struct sr_icmp_t11_hdr* icmp_hdr = (struct sr_icmp_t11_hdr *) (buf + sizeof(struct sr_ethernet_hdr) + sizeof(struct sr_ip_hdr));
+    icmp_hdr->icmp_type = 3; 
+    icmp_hdr->icmp_code = 1;
+    icmp_hdr->unused = 0;
+    memcpy(icmp_hdr->data, packet_ip_head, ICMP_DATA_SIZE);
+
+    icmp_hdr->icmp_sum = 0;
+    icmp_hdr->icmp_sum = cksum(icmp_hdr, sizeof(struct sr_icmp_t11_hdr));
+    memcpy(eth_hdr->ether_shost, sr_get_interface(sr, entry)->addr, ETHER_ADDR_LEN);
+
+    struct sr_arpreq *req = sr_arpcache_queuereq(&sr->cache, next_hop_ip, buf, len, entry);
+    handle_arpreq(req, &sr->cache, sr);
+}
+
+void arp_SendRequest(struct sr_instance *sr, struct sr_arpreq* request, struct sr_packet* packet) {
+
+    unsigned int len = sizeof(struct sr_ethernet_hdr) + sizeof(struct sr_arp_hdr);
+    uint8_t* buf = malloc(len);
+
+    struct sr_if* pkt_Interface = sr_get_interface(sr, packet->iface);
+
+    struct sr_ethernet_hdr* eth_hdr = (struct sr_ethernet_hdr*) buf;
+    
+    memcpy(eth_hdr->ether_dhost, (uint8_t[]){255, 255, 255, 255, 255, 255}, ETHER_ADDR_LEN);
+    memcpy(eth_hdr->ether_shost, pkt_Interface->addr, ETHER_ADDR_LEN);
+    eth_hdr->ether_type = htons(ethertype_arp);
+
+    struct sr_arp_hdr* arp_hdr = (struct sr_arp_hdr *) (buf + sizeof(struct sr_ethernet_hdr));
+    arp_hdr->ar_hrd = htons(arp_hrd_ethernet);
+    arp_hdr->ar_pro = htons(ethertype_ip);
+    arp_hdr->ar_hln = ETHER_ADDR_LEN;
+    arp_hdr->ar_pln = sizeof(uint32_t);
+    arp_hdr->ar_op = htons(arp_op_request);
+    memcpy(arp_hdr->ar_sha, pkt_Interface->addr, ETHER_ADDR_LEN);
+    arp_hdr->ar_sip = pkt_Interface->ip;
+    memcpy(arp_hdr->ar_tha, (unsigned char[]){0, 0, 0, 0, 0, 0}, ETHER_ADDR_LEN);
+    arp_hdr->ar_tip = request->ip;
+
+    sr_send_packet(sr, buf, len, packet->iface);
+}
+
+void handle_arpreq(struct sr_arpreq *req, struct sr_arpcache *cache, struct sr_instance *sr) {
+    
+    time_t now = time(NULL);
+
+    if (difftime(now, req->sent) >= 1.0) {
+
+        struct sr_packet *pkt = req->packets;
+
+        if (req->times_sent >= 5) {
+
+            while (pkt) {
+
+                struct sr_packet *next_pkt = pkt->next;
+
+                icmp_hostUnreachable(sr, pkt);
+
+                pkt = next_pkt;
+                // free(pkt);
+            }
+
+            sr_arpreq_destroy(&sr->cache, req);
+
+        } else {
+
+            arp_SendRequest(sr, req, pkt);
+            req->sent = time(NULL);
+            req->times_sent++;
+        }
+    }
+}
+
+void sr_arpcache_sweepreqs(struct sr_instance *sr) { 
+
+    struct sr_arpreq *req = sr->cache.requests;
+    struct sr_arpreq *next_req = NULL;
+
+    while (req != NULL) {
+
+        next_req = req->next;
+        handle_arpreq(req, &sr->cache, sr);
+        req = next_req;
+    }
+}
+
+
+// -----------------------------------------------------------------------------------------------------
+// DO NOT PASS
+// -----------------------------------------------------------------------------------------------------
+
+// -----------------------------------------------------------------------------------------------------
+// DO NOT PASS
+// -----------------------------------------------------------------------------------------------------
+
+// -----------------------------------------------------------------------------------------------------
+// DO NOT PASS
+// -----------------------------------------------------------------------------------------------------
+
 
 /* You should not need to touch the rest of this code. */
 
@@ -48,12 +193,12 @@ struct sr_arpentry *sr_arpcache_lookup(struct sr_arpcache *cache, uint32_t ip) {
     return copy;
 }
 
-/* Adds an ARP request to the ARP request queue. If the request is already on
+/* Adds an ARP req to the ARP req queue. If the req is already on
    the queue, adds the packet to the linked list of packets for this sr_arpreq
-   that corresponds to this ARP request. You should free the passed *packet.
+   that corresponds to this ARP req. You should free the passed *packet.
    
-   A pointer to the ARP request is returned; it should not be freed. The caller
-   can remove the ARP request from the queue by calling sr_arpreq_destroy. */
+   A pointer to the ARP req is returned; it should not be freed. The caller
+   can remove the ARP req from the queue by calling sr_arpreq_destroy. */
 struct sr_arpreq *sr_arpcache_queuereq(struct sr_arpcache *cache,
                                        uint32_t ip,
                                        uint8_t *packet,           /* borrowed */
@@ -77,7 +222,7 @@ struct sr_arpreq *sr_arpcache_queuereq(struct sr_arpcache *cache,
         cache->requests = req;
     }
     
-    /* Add the packet to the list of packets for this request */
+    /* Add the packet to the list of packets for this req */
     if (packet && packet_len && iface) {
         struct sr_packet *new_pkt = (struct sr_packet *)malloc(sizeof(struct sr_packet));
         
@@ -96,7 +241,7 @@ struct sr_arpreq *sr_arpcache_queuereq(struct sr_arpcache *cache,
 }
 
 /* This method performs two functions:
-   1) Looks up this IP in the request queue. If it is found, returns a pointer
+   1) Looks up this IP in the req queue. If it is found, returns a pointer
       to the sr_arpreq with this IP. Otherwise, returns NULL.
    2) Inserts this IP to MAC mapping in the cache, and marks it valid. */
 struct sr_arpreq *sr_arpcache_insert(struct sr_arpcache *cache,
@@ -140,8 +285,8 @@ struct sr_arpreq *sr_arpcache_insert(struct sr_arpcache *cache,
     return req;
 }
 
-/* Frees all memory associated with this arp request entry. If this arp request
-   entry is on the arp request queue, it is removed from the queue. */
+/* Frees all memory associated with this arp req entry. If this arp req
+   entry is on the arp req queue, it is removed from the queue. */
 void sr_arpreq_destroy(struct sr_arpcache *cache, struct sr_arpreq *entry) {
     pthread_mutex_lock(&(cache->lock));
     
@@ -244,4 +389,3 @@ void *sr_arpcache_timeout(void *sr_ptr) {
     
     return NULL;
 }
-

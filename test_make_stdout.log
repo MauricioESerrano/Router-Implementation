@@ -1,0 +1,92 @@
+sr_router.c: In function 'arp_sendReply':
+sr_router.c:86:36: warning: implicit declaration of function 'malloc' [-Wimplicit-function-declaration]
+       uint8_t *repPkt = (uint8_t *)malloc(repLen);
+                                    ^~~~~~
+sr_router.c:86:36: warning: incompatible implicit declaration of built-in function 'malloc'
+sr_router.c:86:36: note: include '<stdlib.h>' or provide a declaration of 'malloc'
+sr_router.c:89:7: warning: implicit declaration of function 'memcpy' [-Wimplicit-function-declaration]
+       memcpy(eth_hdr->ether_dhost, arp_hdr->ar_sha, ETHER_ADDR_LEN);
+       ^~~~~~
+sr_router.c:89:7: warning: incompatible implicit declaration of built-in function 'memcpy'
+sr_router.c:89:7: note: include '<string.h>' or provide a declaration of 'memcpy'
+sr_router.c: In function 'arp_handleReply':
+sr_router.c:131:5: warning: incompatible implicit declaration of built-in function 'memcpy'
+     memcpy(curr_eth_head->ether_dhost, arp_reply_hdr->ar_sha, ETHER_ADDR_LEN);
+     ^~~~~~
+sr_router.c:131:5: note: include '<string.h>' or provide a declaration of 'memcpy'
+sr_router.c: In function 'icmp_echoReply':
+sr_router.c:142:18: warning: incompatible implicit declaration of built-in function 'malloc'
+   uint8_t* buf = malloc(len);
+                  ^~~~~~
+sr_router.c:142:18: note: include '<stdlib.h>' or provide a declaration of 'malloc'
+sr_router.c:156:3: warning: incompatible implicit declaration of built-in function 'memcpy'
+   memcpy(new_eth_hdr->ether_dhost, eth_hdr->ether_shost, ETHER_ADDR_LEN);
+   ^~~~~~
+sr_router.c:156:3: note: include '<string.h>' or provide a declaration of 'memcpy'
+sr_router.c:176:3: warning: implicit declaration of function 'handle_arpreq' [-Wimplicit-function-declaration]
+   handle_arpreq(req, &sr->cache, sr);
+   ^~~~~~~~~~~~~
+sr_router.c: In function 'icmp_ttlError':
+sr_router.c:186:18: warning: incompatible implicit declaration of built-in function 'malloc'
+   uint8_t* buf = malloc(len);
+                  ^~~~~~
+sr_router.c:186:18: note: include '<stdlib.h>' or provide a declaration of 'malloc'
+sr_router.c:198:3: warning: incompatible implicit declaration of built-in function 'memcpy'
+   memcpy(ether_hdr->ether_dhost, packet_eth_head->ether_shost, ETHER_ADDR_LEN);
+   ^~~~~~
+sr_router.c:198:3: note: include '<string.h>' or provide a declaration of 'memcpy'
+sr_router.c:216:5: warning: implicit declaration of function 'free' [-Wimplicit-function-declaration]
+     free(buf);
+     ^~~~
+sr_router.c:216:5: warning: incompatible implicit declaration of built-in function 'free'
+sr_router.c:216:5: note: include '<stdlib.h>' or provide a declaration of 'free'
+sr_router.c:224:7: warning: incompatible implicit declaration of built-in function 'free'
+       free(buf);
+       ^~~~
+sr_router.c:224:7: note: include '<stdlib.h>' or provide a declaration of 'free'
+sr_router.c:239:94: warning: passing argument 5 of 'sr_arpcache_queuereq' from incompatible pointer type [-Wincompatible-pointer-types]
+   struct sr_arpreq *req = sr_arpcache_queuereq(&sr->cache, packet_ip_head->ip_src, buf, len, exiting_if);
+                                                                                              ^~~~~~~~~~
+In file included from sr_router.h:17:0,
+                 from sr_router.c:20:
+sr_arpcache.h:120:19: note: expected 'char *' but argument is of type 'struct sr_if *'
+ struct sr_arpreq *sr_arpcache_queuereq(struct sr_arpcache *cache,
+                   ^~~~~~~~~~~~~~~~~~~~
+sr_router.c:193:17: warning: unused variable 'received_if' [-Wunused-variable]
+   struct sr_if* received_if = sr_get_interface(sr, interface);
+                 ^~~~~~~~~~~
+sr_router.c: In function 'sr_handlepacket':
+sr_router.c:286:33: warning: passing argument 1 of 'ethertype' from incompatible pointer type [-Wincompatible-pointer-types]
+   uint16_t eth_type = ethertype(eth_hdr);
+                                 ^~~~~~~
+In file included from sr_router.c:23:0:
+sr_utils.h:33:10: note: expected 'uint8_t * {aka unsigned char *}' but argument is of type 'struct sr_ethernet_hdr *'
+ uint16_t ethertype(uint8_t *buf);
+          ^~~~~~~~~
+sr_router.c:300:35: warning: passing argument 3 of 'arp_sendReply' from incompatible pointer type [-Wincompatible-pointer-types]
+         arp_sendReply(sr, packet, recievering_interface);
+                                   ^~~~~~~~~~~~~~~~~~~~~
+sr_router.c:77:6: note: expected 'char *' but argument is of type 'struct sr_if *'
+ void arp_sendReply(struct sr_instance* sr, uint8_t *packet, char* interface) {
+      ^~~~~~~~~~~~~
+sr_router.c:345:7: warning: incompatible implicit declaration of built-in function 'memcpy'
+       memcpy(eth_hdr->ether_shost, outgoing_interface->addr, ETHER_ADDR_LEN);
+       ^~~~~~
+sr_router.c:345:7: note: include '<string.h>' or provide a declaration of 'memcpy'
+sr_router.c:358:44: warning: initialization from incompatible pointer type [-Wincompatible-pointer-types]
+         struct sr_icmp_t08_hdr* icmp_hdr = packet + sizeof(struct sr_ethernet_hdr) + sizeof(struct sr_ip_hdr);
+                                            ^~~~~~
+sr_arpcache.c: In function 'icmp_hostUnreachable':
+sr_arpcache.c:67:22: warning: implicit declaration of function 'cksum' [-Wimplicit-function-declaration]
+     ip_hdr->ip_sum = cksum(ip_hdr, sizeof(struct sr_ip_hdr));
+                      ^~~~~
+sr_arpcache.c:80:5: warning: implicit declaration of function 'handle_arpreq' [-Wimplicit-function-declaration]
+     handle_arpreq(req, &sr->cache, sr);
+     ^~~~~~~~~~~~~
+sr_arpcache.c: At top level:
+sr_arpcache.c:110:6: warning: conflicting types for 'handle_arpreq'
+ void handle_arpreq(struct sr_arpreq *req, struct sr_arpcache *cache, struct sr_instance *sr) {
+      ^~~~~~~~~~~~~
+sr_arpcache.c:80:5: note: previous implicit declaration of 'handle_arpreq' was here
+     handle_arpreq(req, &sr->cache, sr);
+     ^~~~~~~~~~~~~
