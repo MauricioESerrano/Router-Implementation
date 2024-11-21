@@ -2,11 +2,11 @@
 
 ## Info
 
-Name: John Doe
+Name: Mauricio Serrano
 
-PID: A00000000
+PID: A17020958
 
-Email: jdoe@ucsd.edu
+Email: m2serrano@ucsd.edu
 
 ## Description and Overview
 
