@@ -1,14 +1,14 @@
 sr_router.c: In function 'arp_sendReply':
-sr_router.c:86:36: warning: implicit declaration of function 'malloc' [-Wimplicit-function-declaration]
-       uint8_t *repPkt = (uint8_t *)malloc(repLen);
-                                    ^~~~~~
-sr_router.c:86:36: warning: incompatible implicit declaration of built-in function 'malloc'
-sr_router.c:86:36: note: include '<stdlib.h>' or provide a declaration of 'malloc'
-sr_router.c:89:7: warning: implicit declaration of function 'memcpy' [-Wimplicit-function-declaration]
-       memcpy(eth_hdr->ether_dhost, arp_hdr->ar_sha, ETHER_ADDR_LEN);
-       ^~~~~~
-sr_router.c:89:7: warning: incompatible implicit declaration of built-in function 'memcpy'
-sr_router.c:89:7: note: include '<string.h>' or provide a declaration of 'memcpy'
+sr_router.c:86:34: warning: implicit declaration of function 'malloc' [-Wimplicit-function-declaration]
+     uint8_t *repPkt = (uint8_t *)malloc(repLen);
+                                  ^~~~~~
+sr_router.c:86:34: warning: incompatible implicit declaration of built-in function 'malloc'
+sr_router.c:86:34: note: include '<stdlib.h>' or provide a declaration of 'malloc'
+sr_router.c:89:5: warning: implicit declaration of function 'memcpy' [-Wimplicit-function-declaration]
+     memcpy(eth_hdr->ether_dhost, arp_hdr->ar_sha, ETHER_ADDR_LEN);
+     ^~~~~~
+sr_router.c:89:5: warning: incompatible implicit declaration of built-in function 'memcpy'
+sr_router.c:89:5: note: include '<string.h>' or provide a declaration of 'memcpy'
 sr_router.c: In function 'arp_handleReply':
 sr_router.c:131:5: warning: incompatible implicit declaration of built-in function 'memcpy'
      memcpy(curr_eth_head->ether_dhost, arp_reply_hdr->ar_sha, ETHER_ADDR_LEN);

@@ -114,6 +114,7 @@ void arp_handleReply(struct sr_instance* sr, struct sr_arp_hdr* arp_reply_hdr) {
   struct sr_arpreq* targ_arpreq = NULL;
 
   struct sr_arpreq* curr_arpreq = sr->cache.requests;
+  
   while (curr_arpreq != NULL) {
     if (curr_arpreq->ip == reply_sender_ip) {
       targ_arpreq = curr_arpreq;
@@ -149,34 +150,34 @@ void icmp_echoReply(struct sr_instance* sr, uint8_t *packet, unsigned int len, c
   sr_ip_hdr_t *ip_hdr = (sr_ip_hdr_t *)(packet + sizeof(sr_ethernet_hdr_t));
   sr_icmp_t08_hdr_t *icmp_hdr = (sr_icmp_t08_hdr_t *)(packet + sizeof(sr_ethernet_hdr_t) + sizeof(sr_ip_hdr_t));
 
+  struct sr_rt* entry = find_nextHop(sr, ip_hdr->ip_src);
+  if (entry == NULL) return;
+  struct sr_if* existing_interface = sr_get_interface(sr, entry->interface);
+
   sr_ethernet_hdr_t *new_eth_hdr = (sr_ethernet_hdr_t *)buf;
   sr_ip_hdr_t *new_ip_hdr = (sr_ip_hdr_t *)(buf + sizeof(sr_ethernet_hdr_t));
   sr_icmp_t08_hdr_t *new_icmp_hdr = (sr_icmp_t08_hdr_t *)(buf + sizeof(sr_ethernet_hdr_t) + sizeof(sr_ip_hdr_t));
 
   memcpy(new_eth_hdr->ether_dhost, eth_hdr->ether_shost, ETHER_ADDR_LEN);
-  memcpy(new_eth_hdr->ether_shost, eth_hdr->ether_dhost, ETHER_ADDR_LEN);
+  memcpy(new_eth_hdr->ether_shost, existing_interface->addr, ETHER_ADDR_LEN);
   new_eth_hdr->ether_type = eth_hdr->ether_type;
 
   memcpy(new_ip_hdr, ip_hdr, sizeof(sr_ip_hdr_t));
-  new_ip_hdr->ip_src = ip_hdr->ip_dst;
+  new_ip_hdr->ip_src = existing_interface->ip;
   new_ip_hdr->ip_dst = ip_hdr->ip_src;
  
   new_ip_hdr->ip_ttl = 64;
   new_ip_hdr->ip_sum = 0; 
   new_ip_hdr->ip_sum = cksum(new_ip_hdr, sizeof(sr_ip_hdr_t));
 
-  
   memcpy(new_icmp_hdr, icmp_hdr, len - sizeof(sr_ethernet_hdr_t) - sizeof(sr_ip_hdr_t));
   new_icmp_hdr->icmp_type = 0;
   new_icmp_hdr->icmp_code = 0;
   new_icmp_hdr->icmp_sum = 0;
-  new_icmp_hdr->icmp_sum = cksum(new_icmp_hdr, len - sizeof(sr_ethernet_hdr_t) - sizeof(sr_ip_hdr_t));
+  new_icmp_hdr->icmp_sum = cksum(new_icmp_hdr, (len - sizeof(sr_ethernet_hdr_t) - sizeof(sr_ip_hdr_t)));
 
-  struct sr_arpreq *req = sr_arpcache_queuereq(&sr->cache, new_ip_hdr->ip_src, buf, len, interface);
+  struct sr_arpreq *req = sr_arpcache_queuereq(&sr->cache, entry->gw.s_addr, buf, len, entry->interface);
   handle_arpreq(req, &sr->cache, sr);
-
-  // sr_send_packet(sr, buf, len, interface);
-  // free(buf);
 }
 
 void icmp_ttlError(struct sr_instance *sr, uint8_t* packet, char* interface, int type, int code) {
@@ -220,9 +221,9 @@ void icmp_ttlError(struct sr_instance *sr, uint8_t* packet, char* interface, int
   struct sr_if* exiting_if = sr_get_interface(sr, rt_entry->interface);
 
   if (!exiting_if) {
-      fprintf(stderr, "interface not found\n");
-      free(buf);
-      return;
+    fprintf(stderr, "interface not found\n");
+    free(buf);
+    return;
   }
 
   ip_hdr->ip_src = exiting_if->ip;
@@ -329,7 +330,7 @@ void sr_handlepacket(struct sr_instance* sr, uint8_t * packet/* lent */, unsigne
 
     if (bool_tipInInterface(sr, ip_hdr->ip_dst) == 0) {
 
-       if (ip_hdr->ip_ttl == 1) {
+      if (ip_hdr->ip_ttl == 1) {
         icmp_ttlError(sr, packet, interface, 11, 0);
         return;
       }
@@ -352,7 +353,7 @@ void sr_handlepacket(struct sr_instance* sr, uint8_t * packet/* lent */, unsigne
       handle_arpreq(req, &sr->cache, sr);
     }
 
-    else {
+    else if (bool_tipInInterface(sr, ip_hdr->ip_dst) == 1) {
       
       if (ip_hdr->ip_p == ip_protocol_icmp) {
         struct sr_icmp_t08_hdr* icmp_hdr = packet + sizeof(struct sr_ethernet_hdr) + sizeof(struct sr_ip_hdr);
@@ -363,9 +364,8 @@ void sr_handlepacket(struct sr_instance* sr, uint8_t * packet/* lent */, unsigne
 
         uint16_t icmp_storedCkSum = icmp_hdr->icmp_sum;
         icmp_hdr->icmp_sum = 0;
-        int icmpTotalLen = len - sizeof(struct sr_ethernet_hdr) - sizeof(struct sr_ip_hdr);
 
-        if (cksum(icmp_hdr, icmpTotalLen) != icmp_storedCkSum) {
+        if (cksum(icmp_hdr, ( len - sizeof(struct sr_ethernet_hdr) - sizeof(struct sr_ip_hdr)) ) != icmp_storedCkSum) {
           return;
         }
         
