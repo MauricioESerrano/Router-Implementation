@@ -212,6 +212,7 @@ void icmp_ttlError(struct sr_instance *sr, uint8_t* packet, char* interface, int
   ip_hdr->ip_dst = packet_ip_head->ip_src;
 
   struct sr_rt* rt_entry = find_nextHop(sr, packet_ip_head->ip_src);
+  
   if (rt_entry == NULL) {
     fprintf(stderr, "routing not found\n");
     free(buf);
