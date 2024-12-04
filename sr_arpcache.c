@@ -55,7 +55,6 @@ void table_lookup(struct sr_instance* sr, uint32_t ip, uint32_t* next_hop_ip, ch
         entry = entry->next;
     }
 
-    // If a match was found, update next_hop_ip and out_iface
     if (best_match) {
         if (next_hop_ip) *next_hop_ip = best_match->gw.s_addr;
         if (out_iface) *out_iface = best_match->interface;
