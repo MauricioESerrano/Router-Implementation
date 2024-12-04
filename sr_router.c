@@ -61,17 +61,41 @@ int bool_tipInInterface(struct sr_instance* sr, uint32_t ip) {
   return 0;
 }
 
-struct sr_rt *find_nextHop(struct sr_instance *sr, uint32_t ip_dst) {
+// struct sr_rt *find_nextHop(struct sr_instance *sr, uint32_t ip_dst) {
 
-  struct sr_rt *entry = sr->routing_table;
+//   struct sr_rt *entry = sr->routing_table;
   
-  while (entry != NULL) {
-    if (entry->dest.s_addr == ip_dst) {
-      return entry;
+//   while (entry != NULL) {
+//     if (entry->dest.s_addr == ip_dst) {
+//       return entry;
+//     }
+//     entry = entry->next;
+//   }
+//   return NULL;
+// }
+
+
+// ! CHANGED
+struct sr_rt *find_nextHop(struct sr_instance *sr, uint32_t ip_dst) {
+  struct sr_rt* nextHop = NULL;
+  int bestLen = -1;
+
+  struct sr_rt* rtCurr = sr->routing_table;
+
+  while (rtCurr != NULL) {
+    uint32_t targetPre = ip_dst & rtCurr->mask.s_addr;
+    uint32_t destPre = rtCurr->dest.s_addr & rtCurr->mask.s_addr;
+
+    if (targetPre == destPre) {
+      int subLen = __builtin_popcount(rtCurr->mask.s_addr);
+      if (subLen > bestLen) {
+        nextHop = rtCurr;
+        bestLen = subLen;
+      }
     }
-    entry = entry->next;
+    rtCurr = rtCurr->next;
   }
-  return NULL;
+  return nextHop;
 }
 
 void arp_sendReply(struct sr_instance* sr, uint8_t *packet, char* interface) {
@@ -110,24 +134,35 @@ void arp_sendReply(struct sr_instance* sr, uint8_t *packet, char* interface) {
 
 void arp_handleReply(struct sr_instance* sr, struct sr_arp_hdr* arp_reply_hdr) {
 
-  uint32_t reply_sender_ip = arp_reply_hdr->ar_sip;
-  struct sr_arpreq* targ_arpreq = NULL;
+  struct sr_arpreq* curr_arpreq = sr_arpcache_insert(&sr->cache, arp_reply_hdr->ar_sha, arp_reply_hdr->ar_sip);
 
-  struct sr_arpreq* curr_arpreq = sr->cache.requests;
-  
-  while (curr_arpreq != NULL) {
-    if (curr_arpreq->ip == reply_sender_ip) {
-      targ_arpreq = curr_arpreq;
-    }
-    curr_arpreq = curr_arpreq->next;
-  }
-
-  if (targ_arpreq == NULL) {
+  if (curr_arpreq == NULL) {
+    fprintf(perror, "was null in handlereply \n");
     return;
   }
 
+  uint32_t reply_sender_ip = arp_reply_hdr->ar_sip;
+  struct sr_arpreq* targ_arpreq = curr_arpreq;
+
   struct sr_packet* curr_packet = targ_arpreq->packets;
+
+  // struct sr_arpreq* curr_arpreq = sr->cache.requests;
+  
+  // while (curr_arpreq != NULL) {
+  //   if (curr_arpreq->ip == reply_sender_ip) {
+  //     targ_arpreq = curr_arpreq;
+  //   }
+  //   curr_arpreq = curr_arpreq->next;
+  // }
+
+  // if (targ_arpreq == NULL) {
+  //   return;
+  // }
+
+  // struct sr_packet* curr_packet = targ_arpreq->packets;
+
   while (curr_packet !=  NULL) {
+
     struct sr_ethernet_hdr* curr_eth_head = (struct sr_ethernet_hdr *) curr_packet->buf;
     memcpy(curr_eth_head->ether_dhost, arp_reply_hdr->ar_sha, ETHER_ADDR_LEN);
     sr_send_packet(sr, curr_packet->buf, curr_packet->len, curr_packet->iface);
@@ -176,8 +211,24 @@ void icmp_echoReply(struct sr_instance* sr, uint8_t *packet, unsigned int len, c
   new_icmp_hdr->icmp_sum = 0;
   new_icmp_hdr->icmp_sum = cksum(new_icmp_hdr, (len - sizeof(sr_ethernet_hdr_t) - sizeof(sr_ip_hdr_t)));
 
-  struct sr_arpreq *req = sr_arpcache_queuereq(&sr->cache, entry->gw.s_addr, buf, len, entry->interface);
-  handle_arpreq(req, &sr->cache, sr);
+  // struct sr_arpreq *req = sr_arpcache_queuereq(&sr->cache, entry->gw.s_addr, buf, len, entry->interface);
+  // handle_arpreq(req, &sr->cache, sr);
+
+  // ! CHANGED
+
+  struct sr_arpentry* entryCache = sr_arpcache_lookup(&sr->cache, entry->gw.s_addr);
+
+  if (entry != NULL) {
+    memcpy(new_eth_hdr->ether_dhost, entryCache->mac, ETHER_ADDR_LEN);
+    sr_send_packet(sr, buf, len, entry->interface);
+    free(entryCache);
+  }
+
+  else {
+    printf("echo reply null? \n");
+    struct sr_arpreq *req = sr_arpcache_queuereq(&sr->cache, entry->gw.s_addr, buf, len, entry->interface);
+    handle_arpreq(req, &sr->cache, sr);
+  }
 }
 
 void icmp_ttlError(struct sr_instance *sr, uint8_t* packet, char* interface, int type, int code) {
@@ -211,15 +262,15 @@ void icmp_ttlError(struct sr_instance *sr, uint8_t* packet, char* interface, int
   ip_hdr->ip_p = ip_protocol_icmp;
   ip_hdr->ip_dst = packet_ip_head->ip_src;
 
-  struct sr_rt* rt_entry = find_nextHop(sr, packet_ip_head->ip_src);
+  struct sr_rt* entry = find_nextHop(sr, packet_ip_head->ip_src);
   
-  if (rt_entry == NULL) {
+  if (entry == NULL) {
     fprintf(stderr, "routing not found\n");
     free(buf);
     return;
   }
 
-  struct sr_if* exiting_if = sr_get_interface(sr, rt_entry->interface);
+  struct sr_if* exiting_if = sr_get_interface(sr, entry->interface);
 
   if (!exiting_if) {
     fprintf(stderr, "interface not found\n");
@@ -238,11 +289,24 @@ void icmp_ttlError(struct sr_instance *sr, uint8_t* packet, char* interface, int
   icmp_hdr->icmp_sum = 0;
   icmp_hdr->icmp_sum = cksum(icmp_hdr, sizeof(struct sr_icmp_t11_hdr));
 
-  struct sr_arpreq *req = sr_arpcache_queuereq(&sr->cache, packet_ip_head->ip_src, buf, len, exiting_if);
-  handle_arpreq(req, &sr->cache, sr);
+  // struct sr_arpreq *req = sr_arpcache_queuereq(&sr->cache, packet_ip_head->ip_src, buf, len, exiting_if);
+  // handle_arpreq(req, &sr->cache, sr);
 
-  // sr_send_packet(sr, buf, len, exiting_if->name);
-  // free(buf);
+  // ! CHANGED
+  
+  struct sr_arpentry* entryCache = sr_arpcache_lookup(&sr->cache, entry->gw.s_addr);
+
+  if (entryCache != NULL) {
+    memcpy(ether_hdr->ether_dhost, entryCache->mac, ETHER_ADDR_LEN);
+    sr_send_packet(sr, buf, len, entry->interface);
+    free(entryCache);
+  }
+
+  else {
+    printf("ttl or port is null? \n");
+    struct sr_arpreq *req = sr_arpcache_queuereq(&sr->cache, entry->gw.s_addr, buf, len, entry->interface);
+    handle_arpreq(req, &sr->cache, sr);
+  }
 }
 
 
@@ -272,8 +336,8 @@ void sr_handlepacket(struct sr_instance* sr, uint8_t * packet/* lent */, unsigne
 
   printf("*** -> Received packet of length %d \n", len);
 
-  printf("-------------------------INCOMING PACKET---------------------------\n");
-  print_hdrs(packet,len);
+  // printf("-------------------------INCOMING PACKET---------------------------\n");
+  // print_hdrs(packet,len);
 
   // -----------------------------------------------------------------------------------
 
@@ -350,8 +414,24 @@ void sr_handlepacket(struct sr_instance* sr, uint8_t * packet/* lent */, unsigne
       ip_hdr->ip_sum = 0;
       ip_hdr->ip_sum = cksum(ip_hdr, sizeof(struct sr_ip_hdr));
 
-      struct sr_arpreq *req = sr_arpcache_queuereq(&sr->cache, entry->gw.s_addr, packet, len, entry->interface);
-      handle_arpreq(req, &sr->cache, sr);
+      // struct sr_arpreq *req = sr_arpcache_queuereq(&sr->cache, entry->gw.s_addr, packet, len, entry->interface);
+      // handle_arpreq(req, &sr->cache, sr);
+
+      // ! CHANGED
+
+      struct sr_arpentry* entryCache = sr_arpcache_lookup(&sr->cache, entry->gw.s_addr);
+
+      if (entryCache != NULL) {
+        memcpy(eth_hdr->ether_dhost, entryCache->mac, ETHER_ADDR_LEN);
+        sr_send_packet(sr, packet, len, entry->interface);
+        free(entryCache);
+      }
+
+      else {
+        printf("forward null ? \n");
+        struct sr_arpreq *req = sr_arpcache_queuereq(&sr->cache, entry->gw.s_addr, packet, len, entry->interface);
+        handle_arpreq(req, &sr->cache, sr);
+      }
     }
 
     else if (bool_tipInInterface(sr, ip_hdr->ip_dst) == 1) {
@@ -372,6 +452,15 @@ void sr_handlepacket(struct sr_instance* sr, uint8_t * packet/* lent */, unsigne
         
         icmp_echoReply(sr, packet, len, interface);
       }
+
+      // ! CHANGED
+      else if (ip_hdr->ip_p == IPPROTO_UDP || ip_hdr->ip_p == IPPROTO_TCP) {
+        icmp_ttlError(sr, packet, interface, 3, 3);
+        return;
+      }
     }
+  }
+  else {
+    printf("ivp6 error \n");
   }
 }

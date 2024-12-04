@@ -12,26 +12,59 @@
 #include "sr_protocol.h"
 #include "sr_rt.h"
 
-void table_lookup(struct sr_instance* sr, uint32_t ip, uint32_t* next_hop_ip, char** out_iface){
+// void table_lookup(struct sr_instance* sr, uint32_t ip, uint32_t* next_hop_ip, char** out_iface){
   
-  struct sr_rt* entry = sr->routing_table;
+//   struct sr_rt* entry = sr->routing_table;
 
-  while(entry!=NULL){
+//   while(entry!=NULL){
 
-    if(entry->dest.s_addr == ip){
+//     if(entry->dest.s_addr == ip){
 
-      if(next_hop_ip)*next_hop_ip = entry->gw.s_addr;
+//       if(next_hop_ip)*next_hop_ip = entry->gw.s_addr;
 
-      if(out_iface)*out_iface = entry->interface;
+//       if(out_iface)*out_iface = entry->interface;
 
-      return;
+//       return;
+//     }
+//     entry=entry->next;
+//   }
+
+//   *next_hop_ip = 0;
+//   *out_iface = NULL;
+// }
+
+// ! CHANGED
+void table_lookup(struct sr_instance* sr, uint32_t ip, uint32_t* next_hop_ip, char** out_iface) {
+    
+    struct sr_rt* entry = sr->routing_table;
+    struct sr_rt* best_match = NULL;
+    int curr_largest_len = -1;
+
+    while (entry != NULL) {
+        uint32_t target_prefix = ip & entry->mask.s_addr;
+        uint32_t entry_prefix = entry->dest.s_addr & entry->mask.s_addr;
+
+        if (target_prefix == entry_prefix) {
+            int subnet_length = __builtin_popcount(entry->mask.s_addr);
+
+            if (subnet_length > curr_largest_len) {
+                best_match = entry;
+                curr_largest_len = subnet_length;
+            }
+        }
+        entry = entry->next;
     }
-    entry=entry->next;
-  }
 
-  *next_hop_ip = 0;
-  *out_iface = NULL;
+    // If a match was found, update next_hop_ip and out_iface
+    if (best_match) {
+        if (next_hop_ip) *next_hop_ip = best_match->gw.s_addr;
+        if (out_iface) *out_iface = best_match->interface;
+    } else {
+        if (next_hop_ip) *next_hop_ip = 0;
+        if (out_iface) *out_iface = NULL;
+    }
 }
+
 
 void icmp_hostUnreachable(struct sr_instance *sr, struct sr_packet* packet) {
 
@@ -76,8 +109,24 @@ void icmp_hostUnreachable(struct sr_instance *sr, struct sr_packet* packet) {
     icmp_hdr->icmp_sum = cksum(icmp_hdr, sizeof(struct sr_icmp_t11_hdr));
     memcpy(eth_hdr->ether_shost, sr_get_interface(sr, entry)->addr, ETHER_ADDR_LEN);
 
-    struct sr_arpreq *req = sr_arpcache_queuereq(&sr->cache, next_hop_ip, buf, len, entry);
-    handle_arpreq(req, &sr->cache, sr);
+    // struct sr_arpreq *req = sr_arpcache_queuereq(&sr->cache, next_hop_ip, buf, len, entry);
+    // handle_arpreq(req, &sr->cache, sr);
+
+    // ! CHANGED
+    struct sr_arpentry* entryCache = sr_arpcache_lookup(&sr->cache, next_hop_ip);
+
+    if (entry != NULL) {
+      memcpy(eth_hdr->ether_dhost, entryCache->mac, ETHER_ADDR_LEN);
+      sr_send_packet(sr, buf, len, entry);
+      free(entryCache);
+    }
+
+    else {
+        
+        printf("host unreachable null? \n");
+        struct sr_arpreq *req = sr_arpcache_queuereq(&sr->cache, next_hop_ip, buf, len, entry);
+        handle_arpreq(req, &sr->cache, sr);
+    }
 }
 
 void arp_SendRequest(struct sr_instance *sr, struct sr_arpreq* request, struct sr_packet* packet) {
