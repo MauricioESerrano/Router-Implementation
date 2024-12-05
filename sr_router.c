@@ -128,7 +128,7 @@ void arp_sendReply(struct sr_instance* sr, uint8_t *packet, char* interface) {
     sr_send_packet(sr, repPkt, repLen, interface);
   } 
   else {
-    printf("target ip no match\n");
+    // fprintf("target ip no match\n");
   }
 }
 
@@ -141,7 +141,7 @@ void arp_handleReply(struct sr_instance* sr, struct sr_arp_hdr* arp_reply_hdr) {
     return;
   }
 
-  uint32_t reply_sender_ip = arp_reply_hdr->ar_sip;
+  // uint32_t reply_sender_ip = arp_reply_hdr->ar_sip;
   struct sr_arpreq* targ_arpreq = curr_arpreq;
 
   struct sr_packet* curr_packet = targ_arpreq->packets;
@@ -225,7 +225,6 @@ void icmp_echoReply(struct sr_instance* sr, uint8_t *packet, unsigned int len, c
   }
 
   else {
-    printf("echo reply null? \n");
     struct sr_arpreq *req = sr_arpcache_queuereq(&sr->cache, entry->gw.s_addr, buf, len, entry->interface);
     handle_arpreq(req, &sr->cache, sr);
   }
@@ -303,7 +302,6 @@ void icmp_ttlError(struct sr_instance *sr, uint8_t* packet, char* interface, int
   }
 
   else {
-    printf("ttl or port is null? \n");
     struct sr_arpreq *req = sr_arpcache_queuereq(&sr->cache, entry->gw.s_addr, buf, len, entry->interface);
     handle_arpreq(req, &sr->cache, sr);
   }
@@ -428,7 +426,6 @@ void sr_handlepacket(struct sr_instance* sr, uint8_t * packet/* lent */, unsigne
       }
 
       else {
-        printf("forward null ? \n");
         struct sr_arpreq *req = sr_arpcache_queuereq(&sr->cache, entry->gw.s_addr, packet, len, entry->interface);
         handle_arpreq(req, &sr->cache, sr);
       }
@@ -461,6 +458,6 @@ void sr_handlepacket(struct sr_instance* sr, uint8_t * packet/* lent */, unsigne
     }
   }
   else {
-    printf("ivp6 error \n");
+    // printf("ivp6 error \n");
   }
 }

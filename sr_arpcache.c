@@ -114,15 +114,13 @@ void icmp_hostUnreachable(struct sr_instance *sr, struct sr_packet* packet) {
     // ! CHANGED
     struct sr_arpentry* entryCache = sr_arpcache_lookup(&sr->cache, next_hop_ip);
 
-    if (entry != NULL) {
+    if (entryCache != NULL) {
       memcpy(eth_hdr->ether_dhost, entryCache->mac, ETHER_ADDR_LEN);
       sr_send_packet(sr, buf, len, entry);
       free(entryCache);
     }
 
     else {
-        
-        printf("host unreachable null? \n");
         struct sr_arpreq *req = sr_arpcache_queuereq(&sr->cache, next_hop_ip, buf, len, entry);
         handle_arpreq(req, &sr->cache, sr);
     }
