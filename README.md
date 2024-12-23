@@ -4,10 +4,6 @@
 
 Name: Mauricio Serrano
 
-PID: A17020958
-
-Email: m2serrano@ucsd.edu
-
 ## Description and Overview
 
 - sr_arpcache.c - 
